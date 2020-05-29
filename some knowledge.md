@@ -101,6 +101,8 @@
     > Android的消息机制即是在ActivityThread中存在一个主线程的Handler对象mH，Android的事件驱动指的就是此mH发送、处理事件，在ActivityThread的main方法中会初始化主线程的Looper，调用prepare和loop方法开启主线程的loop循环，处理事件。在loop循环中，通过MessageQueue不断的获取Message，之所以没有导致主线程卡死，是因为Android本身就是事件驱动的，主线程正是在loop循环中等待下一个事件到来。Activity、Service的生命周期回调就是通过mH实例发送相关Message调用的。另外此循环之所以不是特别消耗cpu资源，是因为MessageQueue保持了一个native层的MessageQueue引用，并且存储、取出Message的方法也都是依赖native层实现的，在native层依赖Linux的管道epoll机制，阻塞的时候会释放cpu资源。
     >
     > 补充两点，一是MessageQueue中的一个IdleHandler集合，通过给主线程Looper的MessageQueue添加IdleHandler回调，可以实现在Activity页面绘制完成、所有Message处理完毕时，执行其他业务。另一个是Looper的loop循环，在MessageQueue取出一个Message后到Handler处理完这个事件之后，mPrinter对象都有打印日志，可以通过Looper设置自定义的Printer对象，实现对Handler处理消息的时间监听。
+    >
+    > 补充一点Handler持有Activity对象造成内存泄漏的原因：如果Handler直接持有Activity的引用，那当Activity关闭之后，如果MessageQueue中仍存在一个因为需要延时而存在的Message，又由于Message持有Handler引用，因此也就间接持有了Activity的引用，这样就导致Activity内存泄漏了。解决方法是让Handler持有Activity的虚引用。
 
 22. Handler机制，HandlerThread实现
 
@@ -386,13 +388,29 @@
 
 58. Okhttp原理
 
-    > 
+    > OKHttpClient类负责管理配置信息、线程调度、请求队列；Request类用来描述请求参数；Response类用来描述响应结果；Call接口负责执行具体请求。
+    >
+    > OKHttpClient中有一个Dispatcher对象，其内部有维护了一个线程池、三个任务队列（一个队列储存同步任务、一个队列储存正在执行的异步任务、一个队列储存等待中的异步任务）。
+    >
+    > Call接口中定义了创建请求Request对象的方法、同步/异步执行请求返回Response的方法、以及取消请求等方法。下面分析Call实现类RealCall的同步请求方法execute和异步请求方法enqueue。RealCall#execute方法会将Call对象加入Dispatcher的同步队列中，并调用getResponseWithInterceptorChain方法，该方法会返回请求结果，之后将此Call从同步队列中移除。RealCall#enqueue方法会创建一个AsyncCall对象并将其加入异步等待队列中，之后进行判断能否执行此任务（当前请求的任务数是否小于配置、当前Host的请求数是否小于配置），可以执行的话会将此AsyncCall从等待队列中移出并加入异步执行队列，并放入异步线程中执行，执行过程也是调用getResponseWithInterceptorChain方法获取返回结果，再将结果通过传入的Callback回调回去，最后还会调用Dispatcher的finish方法，从等待队列中取下一个任务。
+    >
+    > 正如上所说，OKHttp无论是同步请求还是异步请求都是通过Call的实现类RealCall中的getResponseWithInterceptorChain方法获得返回结果的。这个过程是责任链模式，将一次网络请求过程（处理重试与重定向、配置请求头参数、处理缓存配置、连接服务器、执行流操作）交给了不同的拦截器处理。getResponseWithInterceptorChain方法通过创建一个拦截器的ArrayList集合，依次添加自定义拦截器集合、RetryAndFollowUpInterceptor、BridgeInterceptor、CacheInterceptor、ConnectInterceptor、自定义Network拦截器集合、CallServerInterceptor，并将拦截器集合交给Interceptor.Chain的实现类RealInterceptorChain对象的chain方法处理：会从拦截器集合中取出一个拦截器并调用其intercept方法，而intercept方法中又会构建新的Chain对象，并调用拦截器集合中的下一个拦截器的intercept方法。请求是从拦截器集合中从前到后执行，响应则是从拦截器集合中从后到前依次返回。开发过程中可自定义两种拦截器，一种排在所有okhttp定义的拦截器之前，一种是network拦截器排在最后读写流的CallServerInterceptor之前。第一种拦截器拦截到的请求参数是最原始的、响应参数是最完整的；第二种Network拦截器获得的请求参数是最完整的、响应参数是最原始的。使用哪种看业务需求。
+    >
+    > Ps：缓存原理见30题
 
 59. AIDL
 
     > 见27题
 
 60. APK打包流程和其内容
+
+    > 1.通过aapt工具打包资源，生成R.java文件；aidl工具生成对应java文件
+    >
+    > 2.编译Java文件生成class文件，再通过dex命令生成classes.dex文件
+    >
+    > 3.将dex文件和资源文件打包生成apk文件
+    >
+    > 4.签名、对齐处理
 
 61. Asynctask原理及不足
 
