@@ -414,11 +414,55 @@
 
 61. Asynctask原理及不足
 
-    > 
+    > AsyncTask是Android系统提供的用于执行异步任务的类
+    >
+    > 其特点如下：
+    >
+    > 1.创建了三个泛型Params、Progress、Result，分别代表了三个需要重写的方法doInBackground、onProgressUpdate、onPostExecute的形参类型，另外还定义了一个onPreExecute方法；
+    >
+    > 2.封装了两个线程池，用户可以选择异步任务是串行执行或并行执行；
+    >
+    > 3.与主线程交互：doInBackground执行异步任务时，可以通过publishProgress方法发送参数，在主线程的onProgressUpdate方法中将收到回调，doInBackground的返回结果也将在主线程的onPostExecute中作为形参返回，其原理是AsyncTask内部维持着一个主线程的Handler。AsyncTask内部还有一个没有对Message作任何处理的Handle对象，当传入给AsyncTask的Looper不是主线程的Looper时，将通过这个无实现的Handler发送消息，onProgressUpdate和onPostExecute方法都不会被调用到。因此，AsyncTask只能作为异步方法与主线程交互情形时使用；
+    >
+    > 其原理如下：
+    >
+    > 1.构造方法：无参有参数Handler的都会调用有参数Looper的构造，在其中创建三个成员变量：mHandler、mWorker、mFuture。传入Looper如果是否为主线程Looper，mHandler则是主线程中有处理消息的Handler实现类，否则是一个无任何消息处理的异步线程Handler。mWorker是一个WorkerRunnable实现类，在call方法中调用doInBackground方法、在finally块中调用postResult方法将返回结果通过Handler发送到主线程中的onPostExecute方法中执行；mFuture是一个FutureTask的对象，传入mWorker对象，其中定义了一些取消请求的方法。
+    >
+    > 2.execute方法：内部调用的是executeOnExecutor(sDefaultExecutor,params)方法，sDefaultExecutor是一个串行的线程池，因此execute默认是串行执行。executeOnExecutor方法内部首先调用onPreExecute方法，是我们可以实现在异步任务执行之前调用的方法，可以作一些主线程的初始化操作。之后将参数params交给mWork的mParams参数，调用传入的线程池执行mFuture任务，mWorker中的call方法也就会在异步线程中执行。
+    >
+    > 不足：
+    >
+    > 1.AsyncTask设计初衷就是为了异步任务与主线程交互时使用，也只支持在主线程使用；
+    >
+    > 2.AsyncTask如果是Activity的非静态内部类，那么当Activity销毁而有任务正在执行时，会造成Activity内存泄漏，解决办法是AsyncTask需要是静态的并持有Activity的弱引用；
+    >
+    > 2.AsyncTask并不具备Activity生命周期感知功能，如果Activity销毁前没有调用cancel方法取消任务，任务仍将继续执行，并有可能调用销毁了的Activity更新UI的方法造成crash。解决办法是在Activity销毁时调用cancel方法取消任务，并在AsyncTask中所有更新UI的操作前，调用isCanceled方法判断任务是否已取消。
 
 62. 如何实现一个网络框架
 
+    > 首先明确一点，此处实现的网络框架是在okhttp或httpurlconnection基础上封装的网络框架，如果是去实现一个底层网络框架，难度太大不在考虑范围。在okhttp的基础上再去封装一层，基本目的是为了做接口隔离，好处是当需要替换okhttp时，我们能轻松替换。
+    >
+    > 主要工作：封装处理网络请求的4个要素：请求方式、请求地址、请求参数、请求回调。
+    >
+    > 另外需要考虑设计模式，按照面向对象的六大原则来：
+    >
+    > 单一职责原则（一个类只实现单一的功能）、
+    >
+    > 开闭原则（类、模块、函数对扩展开放对修改封闭）、
+    >
+    > 里氏替换原则（所有引用基类的地方都能使用其子类对象）、
+    >
+    > 依赖倒置原则（模块之间不依赖直接实现，要依赖接口或抽象类）、
+    >
+    > 接口隔离原则（不依赖不需要的接口）、
+    >
+    > 迪米特原则（一个对象只与直接关联对象交互）。
+
 63. 理解Window和WindowManager
+
+    > ~~Window表示窗口的概念，每一个Window都对应一个View和一个ViewRootImpl，Window和View之间通过ViewRootImpl建立联系。Window不是实际存在，它是以View的形式存在的。WindowManager对Window进行管理，包含addView、updateViewLayout、removeView这三个方法。~~
+    >
+    > ~~Window的实现是PhoneWindow，Activity中调用setContentView的具体实现其实是在PhoneWindow中，通过window对应的decorView找到“R.id.content”对应的控件，将布局填充到这个控件中。~~
 
 64. Android IPC机制，描述一次跨进程通讯
 
@@ -426,9 +470,33 @@
 
 65. 动画有哪几类，各有什么特点
 
+    > 属性动画、视图动画（帧动画、补间动画）
+    >
+    > 帧动画是按照一定显示顺序来显示图片；补间动画则是对视图进行旋转、淡入淡出、移动、拉伸等转换；属性动画是在设定的时间内修改对象的属性值。补间动画只是对视图进行一些转换，并没有真正改变视图的属性，也不能用与颜色值的变化；而属性动画则是实实在在修改了对象的属性，也可用于修改颜色值。
+    >
+    > Android还根据动画应用场景提供了其他Api：
+    >
+    > 1.使用动画显示或隐藏视图：创建淡入淡出的属性动画；创建卡片翻转动画；创建圆形揭露动画
+    >
+    > 2.使用动画移动视图：利用ObjectAnimator创建属性动画，也可以使用PathInterpotor添加曲线运行
+    >
+    > 3.基于物理特性的动画：Fling动画（滑出后阻尼停止）、弹簧动画
+    >
+    > 4.使用Transition为布局变化添加过渡效果
+
 66. Intent可以传递哪些数据类型
 
+    > Intent传递的是Bundle数据，Bundle支持基本数据类型、Parcelable、Serializable以及它们对应的ArrayList、Array类型的数据。
+
 67. android四大组件的加载过程，请详细介绍下
+
+    > ~~Activity~~
+    >
+    > ~~启动过程：调用startActivity之后启动过程交给了AMS处理（创建进程、处理进栈、创建ActivityThread并调用main方法），如果进程、栈存在，那么通过IPC通知ActivityThread的内部类ApplicationThread执行创建Activity的任务，通过ActivityThread中的Handler对象mH，执行handleLaunchActivity、performLaunchActivity等操作，使用classloader加载Activity、反射创建其对象，创建Application、创建contextImpl对象赋值上下文、创建ViewRootImpl对象连接Window和DecorView，之后再通过mH发送执行Activity生命周期方法的Message。~~
+    >
+    > ~~销毁过程：通过mH发送执行销毁过程生命周期方法的Message；关闭Window、移除DecorView；调用ContextImpl执行清理操作，通知AMS清理Activity绑定的服务与广播；最后通知AMS此Activity销毁了。~~
+    >
+    > （这类问题我太厌倦了）
 
 68. 介绍下AMS，PMS，installed等核心服务
 
