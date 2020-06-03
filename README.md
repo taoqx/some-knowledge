@@ -404,13 +404,17 @@
 
 60. APK打包流程和其内容
 
-    > 1.通过aapt工具打包资源，生成R.java文件；aidl工具生成对应java文件
+    > 1.通过aapt工具打包资源生成R.java文件、aidl工具生成对应java文件
     >
-    > 2.编译Java文件生成class文件，再通过dex命令生成classes.dex文件
+    > 2.编译Java文件生成class文件，再通过dx工具生成classes.dex文件
     >
-    > 3.将dex文件和资源文件打包生成apk文件
+    > 3.apkbuilder工具将dex文件、编译的资源文件、其他资源文件打包生成apk文件
     >
-    > 4.签名、对齐处理
+    > 4.Jarsigner工具签名
+    >
+    > 5.zipalign工具将apk对齐处理：所有资源文件距离文件起始偏移为4字节整数倍，这样内存映射访问apk文件时速度更快
+    >
+    > ps 签名过程：通过hash算法计算原始数据的摘要，再通过密钥库中的私钥加密摘要信息得到签名信息，最后将签名信息写入签名区。校验签名：提取apk文件摘要与公钥对签名区的数字签名进行解密得到的原始摘要进行比较。keystore签名文件中包含签名和校验过程需要的私钥、公钥和数字证书，其中公钥、私钥是非对称加密算法密钥；数字证书是由身份认证机构颁发的，可以保证密钥可靠性。
 
 61. Asynctask原理及不足
 
@@ -502,7 +506,35 @@
 
 69. Android组件化
 
+    > 开发过程中为了代码重用和业务解耦，当我们把单一的功能放在不同的module中，各个module相互独立、没有依赖关系并可以单独运行调试，那这种划分则是组件化。
+    >
+    > 1.组件module的gradle文件中，通过一个布尔变量来控制module类型，是application或者是library，如果是application还需要指定ApplicationId，sourceSet也需要指定application和library状态下不同的AndroidManifest文件。这样此组件既可以继承调试又可以单独调试，仅需要一个布尔变量来控制。
+    >
+    > 2.各组件没有依赖关系但却需要互相调用方法、传递数据，比如分享组件需要调用登陆组件中的方法获取登陆状态才能继续分享、获取其他组件中的Fragment等场景。基于接口编程可以解决此问题，在各个组件之下，创建一个baseModule被所有组件依赖，创建接口定义某个组件需要暴露的方法，再创建接口实例的生产工厂。接口的具体实现在上层组件中，创建一个组件初始化的方法在程序启动时调用，在其中将需要暴露的对象赋值给baseModule中的接口实例工厂，这样其他组件就可以通过baseModule中获取到接口实例来调用其他组件的方法。需要注意的是，当不需要加载某个组件时，该组件的初始化方法就不需要调用，因此通过反射来调用组件中的初始化方法，并捕获加载没有依赖的组件中的class导致的异常。
+    >
+    > 3.路由实现组件界面跳转。在组件中Activity上通过注解指定path，编译时通过apt生成路由表，其他组件通过baseModule中定义的跳转Activity方法，根据传入的path找到路由表中的Activity实现跳转与传参。
+
 70. 对gradle、proguard、aapt的了解
+
+    > **gradle**是一个项目自动化构建工具，构建就是根据输入信息执行一系列操作最后得到产出物。Gradle就是帮助管理项目中的差异、依赖、编译、打包、部署的。
+    >
+    > Android Gradle项目一般包含如下文件：
+    >
+    > /gradle/wrapper/gradle-wrapper.properties：distributionUrl配置gradle版本；
+    >
+    > build.gradle：buildscript中dependencies配置gradle插件版本；
+    >
+    > gradle.propeties：配置全局gradle设置；
+    >
+    > setting.gradle：配置工程树；
+    >
+    > local.properties：配置sdk、ndk的路径；
+    >
+    > gradlew和gradlew.bat：分别为mac和window系统执行Android项目中的构建任务。
+    >
+    > **proguard**是Android的混淆工具，位于/sdk/tools/proguard目录下，我们可以在module/build.gradle文件中buildTypes/${build variant}下配置minifyEnable true开启混淆，通过proguardFiles指定混淆配置文件，一般制定getDefaultProguardFile('proguard-android.txt')为/sdk/tools/proguard下的配置文件，另外还需制定自定义的配置文件（用于配置一些需要保持不混淆的JavaBean）。构建后会在<module-name>/build/outputs/mapping/${build variant}/目录下生成dump.txt文件说明apk中所有类文件的内部结构；mapping.txt文件包含原始对混淆过的类、方法、字段名称之间的映射关系；seeds.txt文件列出未进行混淆的类和成员；usage.txt列出apk移除的代码。
+    >
+    > **aapt**是指Android资源打包工具（Android Asset Packaging Tool），在Android Gradle Plugin3.0.0开始使用aapt2，位于$ANDROID_HOME/platforms/$VERSION目录下。aapt2流程包括编译和链接两步。编译将资源文件生成.flat格式的临时二进制文件，链接将所有临时二进制文件打包到一个没有dex、没有签名的apk中，并且会生成R.java文件。此apk包含所有资源，以及一个resources.arsc文件。resource.arsc文件是一个资源映射表，其中记录了id值、name以及针对屏幕大小、像素密度等对应信息，根据资源id和具体场景信息（比如分辨率），就可以找到资源的具体地址。
 
 71. dex结构、class结构、apk结构
 
