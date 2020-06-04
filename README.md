@@ -538,15 +538,47 @@
 
 71. dex结构、class结构、apk结构
 
+    > apk结构
+    >
+    > dex文件：可执行文件
+    >
+    > res文件夹：存放应用程序的资源
+    >
+    > assets文件夹：存放打包到apk中的静态文件
+    >
+    > lib文件夹：存放native库
+    >
+    > META-INF文件夹：存放应用程序签名和证书
+    >
+    > AndroidManifest.xml文件：清单文件
+    >
+    > resources.arsc文件：资源配置文件
+    >
+    > 其他：如kotlin文件夹（kotlin_metadata文件）、okhttp3文件夹
+    >
+    > **待补充**
+    >
+    > class结构
+    >
+    > dex结构
+
 72. 跨平台开发技术有哪些？你了解哪些（weex、RN、flutter）
 
 73. ContextWrapper和Activity这些Context有什么区别。
 
+    > Activity继承ContextThemeWrapper，ContextThemeWrapper继承ContextWrapper，ContextWrapper继承Context。ContextWrapper中有一个Context的成员mBase，在Activity创建的时候，也就是ActivityThread#performLaunchActivity方法中会创建一个ContextImpl对象（ContextImpl也是继承Context），并通过调用Activity#attach方法、Activity#attachBaseContext方法将ContextImpl对象赋值给mBase。典型的装饰模式，Activity中继承Context的方法具体实现在ContextImpl类中。
+
 74. Activity、 Window、 View三 者 的 差 别 ， fragment的 特 点 ?
+
+    > Activity显示依靠Window，Window对应的是一个View。在Activity中调用setContentView传入View后，会交给Window的子类PhoneWindow处理，PhoneWindow通过ViewRootImpl管理着一个DecorView，传入的View会放到DecorView的视图树中。Fragment可以看作是对Activity中一个View，但是具备与Activity联动的生命周期回调。
 
 75. Handler、 Thread和 HandlerThread的 差 别 
 
+    > 见22题
+
 76. 低版本SDK实现高版本api
+
+    > 首先弄清在build.gradle中配置的compileSdkVersion、minSdkVersion、targetSdkVersion的区别，当minSdkVersion小于某个api支持的版本时，做运行时版本判断。
 
 77. 编译安卓系统
 
