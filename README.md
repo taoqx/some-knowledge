@@ -5,21 +5,119 @@
 
 2. 事件分发机制
 
+   > 触摸事件从Activity#dispatchTouchEvent(MotionEvent ev)方法开始。MotionEvent事件从Activity到PhoneWindow再到DecorView，这就交给了ViewGroup#dispatchTouchEvent处理。
+   >
+   > 1. ViewGroup#dispatchTouchEvent采用责任链模式，在触摸事件MotionEvent.ACTION_DOWN时，将此事件交给child#dispatchTouchEvent处理，如果child的dispatchTouchEvent事件返回true代表它要处理此次事件，单项链表target记录此child的引用，在其他MotionEvent.ACTION_MOVE等事件到来时，直接交给child#dispatchTouchEvent处理。
+   >
+   > 2. 在看child view对触摸事件的处理，如果child是一个ViewGroup，那么它会将此事件继续交给下层child处理，最后到了View的dispatchTouchEvent，返回结果首先由onTouch方法布尔返回值决定，其次由onTouchEvent方法布尔返回值决定，如果这两个方法都是返回false，那View#dispatchTouchEvent方法就返回false，事件也就交还给parent ViewGroup来处理了。
+   > 3. 回到ViewGroup#dispatchTouchEvent方法，child#dispatchTouchEvent返回了false，接着将触摸事件交个此ViewGroup自己处理，调用父类View#dispatchTouchEvent。也就是会走此ViewGroup的onTouch、onTouchEvent方法，这两个方法的返回值决定了ViewGroup#dispatchTouchEvent方法的返回值，并决定了此ViewGroup的父ViewGroup或Activity#dispatchTouchEvent方法的处理结果（交给子布局处理或尝试自己处理）。
+   > 4. 以上是ViewGroup责任链模式处理触摸事件的大致过程，需要补充的是在ViewGroup#dispatchTouchEvent交给child处理之前，会调用onInterceptTouchEvent方法判断是否拦截此事件，ViewGroup默认返回false不拦截，自定义ViewGroup可以重写此方法拦截事件，拦截之后事件不会再分发给ViewGroup的子View了。另外ViewGroup在调用onInterceptTouchEvent方法之前，会判断mGroupFlags是否包含FLAG_DISALLOW_INTERCEPT标识，如果包含那也是会拦截事件分发。FLAG_DISALLOW_INTERCEPT标识由requestDisallowInterceptTouchEvent(boolean disallowIntercept)控制，一般在子View中可以调用。
+   >
+   > 总结有三种方法拦截事件的传递：
+   >
+   > Activity/ViewGroup#dispatchTouchEvent
+   >
+   > ViewGroup#onInterceptTouchEvent
+   >
+   > ViewParent#requestDisallowInterceptTouchEvent。
+
 3. Binder机制，Stub类中asInterface函数作用，BnBinder和BpBinder区别。
 
 4. 什么时候可以获得View控件的大小
 
+   > 在Activity#onResume方法中获取不到View的宽高，可尝试一下方法获取：
+   >
+   > 1. View.post()：新建任务加入主线程mH的MessageQueue，当mH处理完handleResumeActivity后会处理，此时已可以获得宽高
+   > 2. Activity#onWindowFocusChanged方法中获取，这个方法回调也是在绘制完成之后
+   > 3. viewTreeObserver注册监听获取，注册的回调会在onLayout完成后调用
+   >
+   > 建议使用View.post()方式获取，其余两种方法会被调用多次。
+
 5. 什么是过渡绘制，如何防止过渡绘制
+
+   > 过度绘制：指系统在渲染单个帧的过程中多次在屏幕上绘制某一个像素，如界面被遮盖的元素在渲染时被绘制就发生了过度绘制。
+   >
+   > “开发者选项-调试GPU过度绘制-显示过度绘制区域”，Android将为界面元素着色：
+   >
+   > - 真彩色：没有过度绘制
+   > - 蓝色：过度绘制1次
+   > - 绿色：过度绘制2次
+   > - 粉色：过度绘制3次
+   > - 红色：过度绘制4次或更多
+   >
+   > 解决过度渲染问题：
+   >
+   > - 移除布局中不需要的背景，可以快速提高渲染性能；
+   > - 降低透明度：透明度是一种混合效果，系统会绘制像素多次；
+   > - 使视图层次结构扁平化、采用开销较低的布局：未设置权重的LinearLayout优于RelativeLayout，或采用ConstraintLayout、merge/include等。
+   >
+   > Double Taxation：指复杂布局需要layout-android-measure多次才能够确定最终的元素位置。例如哦使用RelativeLayout、水平方向LinearLayout、有权重LinearLayout时，framework会执行一下操作：
+   >
+   > - 执行一次layout-measure遍历以确定子元素的位置和大小
+   > - 结合数据和对象的权重确定关联对象的位置
+   > - 执行第二次布局遍历以确定最终位置
+   > - 进入渲染过程的下一阶段
+   >
+   > 视图结构的层次越多，潜在的性能消耗就越大。
 
 6. Acticity的生命周期以及四种启动模式
 
+   > 生命周期：onCreate - onStart - onResume - onPause - onStop - onDestroy
+   >
+   > 旋转屏幕：onPause - onStop - onSaveInstanceState  - onDestroy - onCreate - onStart - onRestoreInstanceState - onResume
+   >
+   > 屏幕熄灭亮起：onPause - onStop - onSaveInstanceState - onRestart - onStart - onResume
+   >
+   > singleTop、singleTask启动模式复用Activity：onPause - onNewIntent - onResume
+   >
+   > Activity A 启动 Activity B：A onPause - B onCreate-onStart-onResume - A onStop
+   >
+   > 
+   >
+   > 平时我们使用第三方库，往往需要在activity生命周期中调用绑定/解绑、初始化/释放等操作，虽然写法简单但是当接入的第三方库一多会使得代码难以维护。
+   >
+   > androidx.lifecycle包中Activity/Fragment都实现了LifecycleOwner接口，用户可以通过获取Lifecycle对象来设置生命周期的观察者LifecycleObserver，在生命周期回调发生时会触发相应的方法。
+   >
+   > Lifecycle使用两个枚举来跟踪生命周期状态：Event、State。
+   >
+   > State包括INITIALIZED DESTROYED CREATED STARTED RESUMED
+   >
+   > Event包括ON_CREATE ON_START ON_RESUME ON_PAUSE ON_STOP ON_DESTROY
+   >
+   > State是表示一种状态，Event是State状态之间切换时触发的事件。自定义LifecycleObserver类可以通过在方法上使用@OnLifecycleEvent注解，当制定的Event发生时就会回调到注解的方法，方法中也可以通过lifecycle.currentState获取当前所处的State。
+
 7. Service的两种启动模式及各自对应的生命周期
 
-	[https://www.jianshu.com/p/2fb6eb14fdec](https://www.jianshu.com/p/2fb6eb14fdec)
+  > Service：是一种即使用户未与应用交互也可以在后台运行的组件，运行在主线程。如果后台任务必须在主线程之外执行，并且存在用户与应用交互时使用，那么应该创建新线程执行任务，在onStart中启动线程，在onStop中停止线程。否则才使用Service，如果任务是耗时的，那么应在Service中创建新线程。
+  >
+  > 生命周期：
+  >
+  > - onStartCommand 调用startService启动服务后会调用此方法，启动的服务需要调用stopService/stopSelf来停止服务，否则会无限期运行
+  > - onBind 调用bindService绑定服务后会调用此方法，必须通过返回IBinder提供一个接口给客户端来与服务端通信。
+  > - onCreate 启动/绑定服务都会调用的方法，发生在onStartCommand/onBind之前
+  > - onDestroy 服务注销时的回调方法，应该重写此方法，在其中清理资源
 
 8. volley的源代码
 
+   > 
+
 9. fragment的生命周期
+
+   > onAttach：与Activity关联时调用
+   >
+   > onCreate：系统创建Fragment时调用
+   >
+   > onCreateView：创建与Fragment关联的View
+   >
+   > onActivityCreated：Activity#onCreate方法已返回
+   >
+   > onStart - onResume - onPause - onStop
+   >
+   > onDestroyView：移除Fragment关联的View时调用
+   >
+   > onDestroy：系统销毁Fragment时调用
+   >
+   > onDetach：取消与Activity关联时调用
 
 10. 手机适配一些方案
 
@@ -680,11 +778,21 @@
 
 126. 布局怎么做到每行的文字左右对齐?
 
+     > [不到100行代码实现左右对齐TextView](https://www.jianshu.com/p/7241ed34346a)
+
 127. framework加载activity的流程
+
+     > 见67题
 
 128. 自己写一个应用,包名就叫android行不行,为什么?
 
+     > 实测不行，IDE提示至少要一个符号“.”
+     >
+     > 如果包名为"com.android"，是可以的
+
 129. 主线程looper如果没有消息,就会阻塞在那,为什么不会ANR?
+
+     > ANR指的是系统无法响应用户触摸事件和绘制操作时抛出的异常。主线程looper虽然阻塞，但并不会影响用户事件的处理，反而正是looper处理了用户的触摸事件。
 
 
 
