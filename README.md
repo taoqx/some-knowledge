@@ -7,20 +7,15 @@
 
    > 触摸事件从Activity#dispatchTouchEvent(MotionEvent ev)方法开始。MotionEvent事件从Activity到PhoneWindow再到DecorView，这就交给了ViewGroup#dispatchTouchEvent处理。
    >
-   > 1. ViewGroup#dispatchTouchEvent采用责任链模式，在触摸事件MotionEvent.ACTION_DOWN时，将此事件交给child#dispatchTouchEvent处理，如果child的dispatchTouchEvent事件返回true代表它要处理此次事件，单项链表target记录此child的引用，在其他MotionEvent.ACTION_MOVE等事件到来时，直接交给child#dispatchTouchEvent处理。
-   >
-   > 2. 在看child view对触摸事件的处理，如果child是一个ViewGroup，那么它会将此事件继续交给下层child处理，最后到了View的dispatchTouchEvent，返回结果首先由onTouch方法布尔返回值决定，其次由onTouchEvent方法布尔返回值决定，如果这两个方法都是返回false，那View#dispatchTouchEvent方法就返回false，事件也就交还给parent ViewGroup来处理了。
-   > 3. 回到ViewGroup#dispatchTouchEvent方法，child#dispatchTouchEvent返回了false，接着将触摸事件交个此ViewGroup自己处理，调用父类View#dispatchTouchEvent。也就是会走此ViewGroup的onTouch、onTouchEvent方法，这两个方法的返回值决定了ViewGroup#dispatchTouchEvent方法的返回值，并决定了此ViewGroup的父ViewGroup或Activity#dispatchTouchEvent方法的处理结果（交给子布局处理或尝试自己处理）。
-   > 4. 以上是ViewGroup责任链模式处理触摸事件的大致过程，需要补充的是在ViewGroup#dispatchTouchEvent交给child处理之前，会调用onInterceptTouchEvent方法判断是否拦截此事件，ViewGroup默认返回false不拦截，自定义ViewGroup可以重写此方法拦截事件，拦截之后事件不会再分发给ViewGroup的子View了。另外ViewGroup在调用onInterceptTouchEvent方法之前，会判断mGroupFlags是否包含FLAG_DISALLOW_INTERCEPT标识，如果包含那也是会拦截事件分发。FLAG_DISALLOW_INTERCEPT标识由requestDisallowInterceptTouchEvent(boolean disallowIntercept)控制，一般在子View中可以调用。
-   >
-   > 总结有三种方法拦截事件的传递：
-   >
-   > Activity/ViewGroup#dispatchTouchEvent
-   >
-   > ViewGroup#onInterceptTouchEvent
-   >
-   > ViewParent#requestDisallowInterceptTouchEvent。
-
+   > 1. ViewGroup#dispatchTouchEvent采用责任链模式，在触摸事件MotionEvent.ACTION_DOWN时，将此事件交给child#dispatchTouchEvent处理，如果child的dispatchTouchEvent事件返回true代表它要处理此次事件，单向链表target记录此child的引用，在其他MotionEvent.ACTION_MOVE等事件到来时，直接交给child#dispatchTouchEvent处理。
+   >2. 再看child view对触摸事件的处理，如果child是一个ViewGroup，那么它会将此事件继续交给下层child处理，一直到最下层View的dispatchTouchEvent，它返回结果首先由onTouch方法布尔返回值决定，其次由onTouchEvent方法布尔返回值决定，如果这两个方法都返回false，那View#dispatchTouchEvent方法就返回false，事件也就交还给parent ViewGroup来处理了。
+   > 3. 回到ViewGroup#dispatchTouchEvent方法，child#dispatchTouchEvent返回了false，接着将触摸事件交个此ViewGroup自己处理，调用super.dispatchTouchEvent，也就是会走此ViewGroup的onTouch、onTouchEvent方法，这两个方法的返回值决定了ViewGroup自己处理触摸事件，还是将触摸事件交给上层ViewGroup或Activity#dispatchTouchEvent方法的处理结果。
+   > 4. 以上是ViewGroup责任链模式处理触摸事件的大致过程，将触摸事件从Activity到View层层向下传递，到最下层View如果它不愿意接收处理事件，事件又将层层向上回传，直到返回给Activity处理。
+   > 5. ViewGroup#dispatchTouchEvent交给child处理之前，会调用onInterceptTouchEvent方法判断是否拦截此事件，ViewGroup默认返回false不拦截，自定义ViewGroup可以重写此方法拦截事件，拦截之后事件不会再分发给ViewGroup的子View了。另外ViewGroup在调用onInterceptTouchEvent方法之前，会判断mGroupFlags是否包含FLAG_DISALLOW_INTERCEPT标识，如果包含那也是会拦截事件分发。FLAG_DISALLOW_INTERCEPT标识由requestDisallowInterceptTouchEvent(boolean disallowIntercept)控制，一般在子View中可以调用。总结有三种方法拦截事件的传递：
+   >   1. Activity/ViewGroup#dispatchTouchEvent
+   >    2. ViewGroup#onInterceptTouchEvent
+   >   3. ViewParent#requestDisallowInterceptTouchEvent。
+   
 3. Binder机制，Stub类中asInterface函数作用，BnBinder和BpBinder区别。
 
 4. 什么时候可以获得View控件的大小
@@ -48,12 +43,12 @@
    > 解决过度渲染问题：
    >
    > - 移除布局中不需要的背景，可以快速提高渲染性能；
-   > - 降低透明度：透明度是一种混合效果，系统会绘制像素多次；
-   > - 使视图层次结构扁平化、采用开销较低的布局：未设置权重的LinearLayout优于RelativeLayout，或采用ConstraintLayout、merge/include等。
+   > - 减少使用透明度：透明度是一种混合效果，系统会绘制像素多次；
+   > - 使视图层次结构扁平化、采用开销较低的布局：采用ConstraintLayout、merge/include等，未设置权重的LinearLayout也优于RelativeLayout；
    >
-   > Double Taxation：指复杂布局需要layout-android-measure多次才能够确定最终的元素位置。例如哦使用RelativeLayout、水平方向LinearLayout、有权重LinearLayout时，framework会执行一下操作：
+   > Double Taxation：指复杂布局需要measure-layout多次才能够确定最终的元素位置。例如使用RelativeLayout、水平方向LinearLayout、有权重LinearLayout时，framework会执行一下操作：
    >
-   > - 执行一次layout-measure遍历以确定子元素的位置和大小
+   > - 执行一次measure-layout遍历以确定子元素的位置和大小
    > - 结合数据和对象的权重确定关联对象的位置
    > - 执行第二次布局遍历以确定最终位置
    > - 进入渲染过程的下一阶段
@@ -88,18 +83,36 @@
 
 7. Service的两种启动模式及各自对应的生命周期
 
-  > Service：是一种即使用户未与应用交互也可以在后台运行的组件，运行在主线程。如果后台任务必须在主线程之外执行，并且存在用户与应用交互时使用，那么应该创建新线程执行任务，在onStart中启动线程，在onStop中停止线程。否则才使用Service，如果任务是耗时的，那么应在Service中创建新线程。
-  >
-  > 生命周期：
-  >
-  > - onStartCommand 调用startService启动服务后会调用此方法，启动的服务需要调用stopService/stopSelf来停止服务，否则会无限期运行
-  > - onBind 调用bindService绑定服务后会调用此方法，必须通过返回IBinder提供一个接口给客户端来与服务端通信。
-  > - onCreate 启动/绑定服务都会调用的方法，发生在onStartCommand/onBind之前
-  > - onDestroy 服务注销时的回调方法，应该重写此方法，在其中清理资源
+   > Service是一种即使用户未与应用交互也可以在后台运行的组件，运行在主线程。如果后台任务必须在主线程之外执行，并且存在用户与应用交互时使用，那么应该创建新线程执行任务，在onStart中启动线程，在onStop中停止线程。否则才使用Service，如果任务是耗时的，那么应在Service中创建新线程。
+   >
+   > 生命周期：
+   >
+   > - onStartCommand 调用startService启动服务后会调用此方法，启动的服务需要调用stopService/stopSelf来停止服务，否则会无限期运行
+   > - onBind 调用bindService绑定服务后会调用此方法，必须通过返回IBinder提供一个接口给客户端来与服务端通信。
+   > - onCreate 启动/绑定服务都会调用的方法，发生在onStartCommand/onBind之前
+   > - onDestroy 服务注销时的回调方法，应该重写此方法，在其中清理资源
 
 8. volley的源代码
 
-   > 
+   > volley API中有两个很重要的类，一个是RequestQueue、一个是Request，使用流程为：
+   >
+   > 1. 创建RequestQueue，如Volley.newRequestQueue()；
+   > 2. 创建Request，包含请求方式、url、成功回调、失败回调、优先级mSequence值；
+   > 3. 调用RequestQueue#add(Request)执行请求；
+   >
+   > ![](https://developer.android.com/images/training/volley-request.png)
+   >
+   > Volley源码分析：
+   >
+   > 1. RequestQueue：构造函数会传入缓存配置、网络配置（httpurlconnection/httpclient），之后调用start方法创建一个CacheDispatcher和默认的4个NetworkDispatcher线程，并调用其start方法。一般通过单例模式使用RequestQueue，避免重复创建多个分发线程。RequestQueue中还包含两个优先级阻塞队列PriorityBlockingQueue，一个存储缓存Request的mCacheQueue、一个存储网络Request的mNetworkQueue。
+   >
+   > 2. 当调用RequestQueue#add方法加入Request时，如果Request不可缓存则将Request加入mNetworkQueue，否则加入mCacheQueue。CacheDispatcher中的run方法有一个无限while循环，不断从mCacheQueue中取Request处理：如果根据此Request的key获得的缓存实体Entry的Expires没有过期那么将缓存结果返回，否则将Request加入mNetworkQueue。NetworkDispatcher中的run方法同样也有一个无限while循环不断从mNetworkQueue中取Request，取出后交给HttpUrlConnection/HttpClient访问网络获取响应结果，成功后还会将响应预元数据存放在Cache中。
+   >
+   > 3. 补充：PriorityBlockingQueue它是一个基于堆的无界、并发安全的优先级队列。其中的元素不能为null，且必须实现Comparable接口，compareTo方法返回负数表示优先级高、返回正数表示优先级低，插入元素时会将优先级高的放在队列前面，优先级低的放在队列后面，取出元素时从优先级高的元素开始，当队列中无元素时调用取出操作take()会阻塞线程。
+   >
+   > volley与okhttp比较：
+   >
+   > volley是基于httpurlconnection/httpclient，并封装了图片加载框架，其使用的缓存是基于Expires过期时间来判断，是一个轻量级的网络框架（不适合下载大量内容，官网推荐的是DownloadManager）；而okhttp是基于socket和okio，拥有自动维护的socket连接池（减少握手次数）、队列线程池、基于Header的缓存策略，是更高效的网络请求框架。
 
 9. fragment的生命周期
 
@@ -126,6 +139,8 @@
 12. 类加载器机制、加载流程、 双亲委托机制，类的五个加载过程。
 
 13. View的绘制流程
+
+    > 绘制流程从ViewRootImpl#scheduleTraversals开始，创建Runnable交给performTraversals方法开始
 
 14. EventBus源码
 
@@ -786,7 +801,7 @@
 
 128. 自己写一个应用,包名就叫android行不行,为什么?
 
-     > 实测不行，IDE提示至少要一个符号“.”
+     > 不行，IDE提示至少要一个符号“.”
      >
      > 如果包名为"com.android"，是可以的
 
