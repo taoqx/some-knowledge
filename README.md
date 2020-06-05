@@ -213,9 +213,12 @@
     >
     > Android的消息机制即是在ActivityThread中存在一个主线程的Handler对象mH，Android的事件驱动指的就是此mH发送、处理事件，在ActivityThread的main方法中会初始化主线程的Looper，调用prepare和loop方法开启主线程的loop循环，处理事件。在loop循环中，通过MessageQueue不断的获取Message，之所以没有导致主线程卡死，是因为Android本身就是事件驱动的，主线程正是在loop循环中等待下一个事件到来。Activity、Service的生命周期回调就是通过mH实例发送相关Message调用的。另外此循环之所以不是特别消耗cpu资源，是因为MessageQueue保持了一个native层的MessageQueue引用，并且存储、取出Message的方法也都是依赖native层实现的，在native层依赖Linux的管道epoll机制，阻塞的时候会释放cpu资源。
     >
-    > 补充两点，一是MessageQueue中的一个IdleHandler集合，通过给主线程Looper的MessageQueue添加IdleHandler回调，可以实现在Activity页面绘制完成、所有Message处理完毕时，执行其他业务。另一个是Looper的loop循环，在MessageQueue取出一个Message后到Handler处理完这个事件之后，mPrinter对象都有打印日志，可以通过Looper设置自定义的Printer对象，实现对Handler处理消息的时间监听。
+    > 补充：
     >
-    > 补充一点Handler持有Activity对象造成内存泄漏的原因：如果Handler直接持有Activity的引用，那当Activity关闭之后，如果MessageQueue中仍存在一个因为需要延时而存在的Message，又由于Message持有Handler引用，因此也就间接持有了Activity的引用，这样就导致Activity内存泄漏了。解决方法是让Handler持有Activity的虚引用。
+    > - MessageQueue中的一个IdleHandler集合，通过给主线程Looper的MessageQueue添加IdleHandler回调，可以实现在Activity页面绘制完成、所有Message处理完毕时，执行其他业务。
+    > - Looper的loop循环，在MessageQueue取出一个Message后到Handler处理完这个事件之后，mPrinter对象都有打印日志，可以通过Looper设置自定义的Printer对象，实现对Handler处理消息的时间监听。
+    > - Handler持有Activity对象造成内存泄漏的原因：如果Handler直接持有Activity的引用，那当Activity关闭之后，如果MessageQueue中仍存在一个因为需要延时而存在的Message，又由于Message持有Handler引用，因此也就间接持有了Activity的引用，这样就导致Activity内存泄漏了。解决方法是让Handler持有Activity的虚引用。
+    > - Handler的同步屏障机制：MessageQueue#postSyncBarrier会在MessageQueue中根据时间位置插入一个没有Handler引用的Message，当MessageQueue中取到没有Handler引用的Message时，会进入一个do-while循环，通过msg.next遍历寻找到一个异步（isAsynchronous）消息后跳出循环去执行此异步消息。这就像是给MessageQueue中的同步消息插入了一个屏障，遇到这个屏障时使得异步消息能够优先执行，View的绘制任务就是使用同步屏障机制的异步消息。
 
 22. Handler机制，HandlerThread实现
 
