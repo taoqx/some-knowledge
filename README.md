@@ -3,7 +3,54 @@
 ## Android
 1. Android性能优化方案（如内存优化、网络优化、布局优化、电量优化、业务优化）
 
-2. 事件分发机制
+   > 内存优化：
+   >
+   > - 监控可用内存和内存使用量
+   >   - 使用内存分析器监控可用内存和内存使用量，发起垃圾回收事件，拍摄Java堆快照分析
+   >   - 在Activity#onTrimMemory()回调中响应与内存相关的事件
+   >   - 查询系统ActivityManager.MemoryInfo对象，包含设备相关的信息，如可用内存、总内存、内存阈值等
+   >   - 对于占用内存比较大的对象尤其是Bitmap，用完之后及时释放
+   > - 使用内存效率更高的代码结构
+   >   - 谨慎使用服务，系统会将此服务的进程始终保持在运行状态，导致服务进程代价昂贵，因为一旦服务使用了某部分RAM，那么这部分RAM就不再可供其他进程使用。应该避免使用持久性服务，建议采用JobScheduler方案替代；如果必须使用某些服务，建议使用IntentService，它会在处理完intent后自动关闭。
+   >   - 使用经过优化后的数据容器，常规的HashMap效率低下，建议使用Android优化过的数据容器，如SparseArray，它可以避免系统对键的自动装箱过程。
+   >   - 避免内存抖动，内存抖动会导致大量的垃圾回收事件。垃圾回收通常不会影响应用性能，但系统在垃圾回收时无法处理其他事情，如果短时间发生大量垃圾回收事件，就可能会影响帧渲染导致画面卡顿。因此在for/while循环、View#onDraw等方法中不要创建临时对象，那样会快速消耗新生代内存区域，导致内存抖动。通过内存分析工具，寻找内存抖动较高的位置，进行修复。
+   > - 移除会占用大量内存的资源和库：代码中的资源和库可能在我们不知情的情况下占用大量内存，因此缩减apk大小、移除冗余臃肿的库或资源也很有必要。
+   >
+   > 网络优化：
+   >
+   > - 通过Gzip压缩，减少传输的数据量大小，也就能减少流量消耗与传输数据
+   >
+   > - DNS解析需要向运营商Local DNS发起解析请求，有域名劫持、解析失败等风险，解析时间也长，通过，通过HttpDns替代DNS解析或直接用ip代替域名的方式优化
+   > - 协议层优化：HTTP1.1版本引入了“持久连接”，多个请求被复用，无需重建TCP连接；HTTP2引入了“多工”、头信息压缩、服务器推送等特性
+   > - 图片下载优化：采用WebP可大幅度节省流量，相对jpg图片流量节省25-35%，相对于png图片节省将近80%
+   > - 合并请求、减少请求次数：对于统计、上报类的接口，可以先将数据保存在本地，设置JobScheduler任务统一上传
+   > - 使用网络缓存，减少网络请求次数
+   > - 数据预取：根据用户特性预先判断用户下一步行为，空闲时预先请求数据
+   >
+   > 布局优化：
+   >
+   > - 每隔16ms系统就会发送一个VSYNC信号触发界面渲染，如果下一个16ms内渲染完成那么画面就是流畅的，否则会有卡顿感，因此需要保证实际帧率不能低于60fps太多
+   >
+   > - 调试GPU过度渲染，精准定位过度渲染位置
+   > - 使用扁平化的布局，移除不必要的View
+   > - 使用Merge标签配合include减少嵌套层次、ViewStub延迟初始化
+   >
+   > 电量优化：
+   >
+   > - 使用工具Battery Historian分析应用耗电量
+   > - CPU占用率高时耗电量也会升高，因此从观察CPU占用率开始优化
+   > - 网络传输会导致耗电升高，因此也需要优化网络传输
+   > - GPS定位会导致耗电升高，在用户界面不可见时要取消定位监听
+   > - 谨慎使用WakeLock，它会阻碍系统休眠，耗电严重
+   > - 使用传感器时，选择合适的采样率，采样率越高耗电越严重
+   > - 对于可延迟的、场景触发的任务，使用JobScheduler优化，不要在子线程使用无限循环
+   >
+   > 业务优化：
+   >
+   > - 串行业务并行化
+   > - 思考业务方案，简化流程
+
+2. 事件分发机制 
 
    > 触摸事件从Activity#dispatchTouchEvent(MotionEvent ev)方法开始。MotionEvent事件从Activity到PhoneWindow再到DecorView，这就交给了ViewGroup#dispatchTouchEvent处理。
    >
@@ -15,7 +62,7 @@
    >   1. Activity/ViewGroup#dispatchTouchEvent
    >    2. ViewGroup#onInterceptTouchEvent
    >   3. ViewParent#requestDisallowInterceptTouchEvent。
-   
+
 3. Binder机制，Stub类中asInterface函数作用，BnBinder和BpBinder区别。
 
 4. 什么时候可以获得View控件的大小
@@ -100,8 +147,6 @@
    > 2. 创建Request，包含请求方式、url、成功回调、失败回调、优先级mSequence值；
    > 3. 调用RequestQueue#add(Request)执行请求；
    >
-   > ![](https://developer.android.com/images/training/volley-request.png)
-   >
    > Volley源码分析：
    >
    > 1. RequestQueue：构造函数会传入缓存配置、网络配置（httpurlconnection/httpclient），之后调用start方法创建一个CacheDispatcher和默认的4个NetworkDispatcher线程，并调用其start方法。一般通过单例模式使用RequestQueue，避免重复创建多个分发线程。RequestQueue中还包含两个优先级阻塞队列PriorityBlockingQueue，一个存储缓存Request的mCacheQueue、一个存储网络Request的mNetworkQueue。
@@ -134,13 +179,84 @@
 
 10. 手机适配一些方案
 
+    > 屏幕适配问题：
+    >
+    > Android提供dp单位替换px来做屏幕适配，换算单位是px = density * dp。density的计算方式是像素密度dpi / 160，像素密度是屏幕尺寸上的像素数 / 屏幕尺寸。使用dp来适配，在不同机型上难以达到设计图所示的效果，比如设计图的宽是360dp，我们一台1920*1080、5寸的手机计算density = 440dpi / 160，而屏幕宽的dp值则是1080px / (440dpi / 160) = 392.7dp，但我们如果按照设计图360dp的宽度来设置UI的话，真实效果显然是会和设计图不同的，各种其他机型的真机效果也是千差万别了。为了解决这个问题，今日头条屏幕适配方案是：仍旧使用dp来适配、通过修改系统density值要让屏幕宽或高其中一个计算的dp值与设计图相等。比如设计图宽度为360dp，不同机型设置它自己的density，使得不同屏幕宽度px值 / density = 360dp，这样就能使得不同机型UI完整设配设计图了。修改density的方式是：因为我们dp和px转化都是通过DisplayMetrics相关的api来的，因此只需修改Activity和Application中Resource中的DisplayMetrics的density、scaledDensity、densityDpi值即可，而修改后的density = displayMetrics.widthPixel / 设计图宽度360dp；修改后的scaledDensity根据原有scaledDensity与density比值决定，使得修改后保持同一比值；修改后的densityDpi则等于density/160。最后在Activity#onCreate方法中调用修改的方法即可。
+    >
+    > 
+    >
+    > 状态栏适配问题：
+    >
+    > 状态栏透明，内容布局延伸到系统状态栏达到沉浸式状态栏效果，在Android各版本设置的方式不同。
+    >
+    > - Android 5.0及以后版本：设置getWindow().getDecorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN)使内容延伸到状态栏，再通过setStatusBarColor把系统状态栏设置成透明即可；
+    > - Android 4.4 - Android 5.0：通过getWindow().addFlag(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)可以让状态栏透明并且我们内容延伸到系统状态栏；
+    > - Android 4.4以前不支持透明状态栏
+    >
+    > 我们有时并不需要沉浸式状态栏，只需状态栏颜色与我们toolbar颜色相同即可。
+    >
+    > - Android 5.0及以后版本：直接设置setStatusBarColor()或修改colorPrimaryDark值
+    > - Android 4.4 - Android 5.0版本：通过getWindow().addFlag(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)让状态栏透明后，我们自己的内容布局向上设置一个等于系统状态栏高度的padding即可
+    >
+    > 另外在Android6.0开始提供了修改状态栏字体颜色的方法，避免因自定义状态栏颜色使得字体不可见的问题。字体颜色默认白色，可修改为黑色：getWindow().getDecorView.setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR)
+
 11. Android资源管理
+
+    > Android Studio的资源管理窗口：View - Tool Window - Resource Manager，可以在其中将可绘制对象导入资源（自动解析密度），也可以将资源直接拖到xml布局中显示。
+    >
+    > Android的资源管理框架：Resources和AssetManager，分别管理res和assets目录下的资源。res包下除了raw包以外的资源都会通过aapt编译成二进制格式的xml文件，注册到R类中并生成resources.arsc索引文件，其他assets和res/raw下的资源不做处理，使用时需要读取原文件。
 
 12. 类加载器机制、加载流程、 双亲委托机制，类的五个加载过程。
 
-13. View的绘制流程
+    > 类加载机制：虚拟机把描述类的数据从Class文件中加载到内存，并对数据进行校验、转换解析和初始化，最后形成可以被虚拟机直接使用的Java类型，这就是虚拟机的类加载机制。Java语言中，类型的加载、连接和初始化过程都是程序运行期间完成的，这样虽然会令类加载时稍微增加性能开销，但是也为Java程序提供了很高的灵活性，Java可以动态扩展的语言特性就是依赖运行时动态加载和动态连接这个特点实现的。
+    >
+    > 
+    >
+    > 类加载时机：一个类从被加载到虚拟机内存开始，到卸载出内存，其生命周期是：加载、验证、准备、解析、初始化、使用和卸载七个阶段。什么时候需要类加载并没有强制约束，但是对类初始化却有严格规定，而初始化之前必须对类进行加载、验证、准备、解析过程。初始化场景有且只有在5个主动引用情况下发生。
+    >
+    > - 遇到new、getstatic、putstatic或invokestatic这4条指令且对应的类没有初始化时
+    > - 对类进行反射调用且没有初始化时
+    > - 初始化一个类，需要先触发其父类的初始化且父类没有初始化时
+    > - 虚拟机启动时，用户指定的main方法所在的类的初始化
+    > - MethodHandle实例最后的解析结果REF_getStatic、REF_putStatic、REF_invokeStatic的方法句柄，且这个方法句柄对应的类没有进行过初始化时
+    >
+    > 除此之外都不会触发初始化，其引用被称为被动引用。如
+    >
+    > - 通过子类引用父类的静态字段，只会初始化父类，不会初始化子类
+    > - 创建此类的数组对象，不会触发此类的初始化
+    > - 常量在编译期间会存入调用类的常量池，因此也不会初始化常量定义的类
+    >
+    > 
+    >
+    > 类加载过程：
+    >
+    > - 加载
+    >   - 通过一个类的全限定名来获取此类的二进制字节流
+    >   - 将这个字节流所代表的静态存储结构转化为方法区的运行时数据结构
+    >   - 在内存中生成一个代表这个类的Class对象，作为方法区访问这个类的各种数据的访问入口
+    > - 验证：目的是确保Class文件的字节流中的信息符合当前虚拟机的要求
+    >   - 文件格式验证（验证字节流是否符合Class文件格式规范）：魔数开头、主次版本号、检查常量池tag标记是否支持、检查各种索引是否指向不存在的常量或不符合类型的常量、CONSTANT_Utf8_info是否有不符合UTF-8编码的数据等
+    >   - 元数据验证（对字节码描述的信息进行语义分析）：这个类是否有父类、是否继承不允许被继承的类（final修饰）、如果不是抽象类是否实现了父类所有抽象方法、类中的方法、字段是否与父类产生矛盾等
+    >   - 字节码验证（对类的方法体进行校验分析，保证方法运行时不会危害虚拟机安全）
+    >   - 符号引用验证（发生在准备阶段，将符号引用转换为直接引用时，对常量池中各种符号引用的信息进行匹配校验）：如符号引用描述的全限定名能否找到对应的类、指定类中是否存在对应的字段和方法、指定的类的字段和方法是否可以被访问
+    > - 准备：正式为类变量分配内存并设置类变量初始值，需要注意的是只会为类变量（static修饰）分配内存，且初始化的值一般为0
+    > - 解析：将常量池中的符号引用替换为直接引用
+    >   - 符号引用：是用一组符号来描述所引用的目标，可以是任何字面量，只要能定位到目标即可
+    >   - 直接引用：是可以指向目标的指针、相对偏移量或一个能间接定位到目标的句柄。
+    >   - 解析动作主要针对类或接口、字段、类方法、接口方法、方法类型、方法句柄和调用点限定符这7种符号引用进行
+    >   - 类或接口的解析过程是：如果不是数组，那么将它的全限定名传递给类加载器加载，期间可能会触发其他相关类的加载，加载完成之后，就有这个类的直接引用了。
+    > - 初始化：初始化阶段是执行类构造器<clinit>()方法的过程
+    >   - <clinit>()方法是由编译自动收集所有类变量的赋值动作和static静态代码块中语句合并生成
+    >   - <clinit>()不需要显示调用父类的<clinit>()方法，虚拟机会保证父类的方法先执行
+    >   - 虚拟机会保证<clinit>()在多线程环境下是加锁、同步的。
+    >
+    > 
+    >
+    > 双亲委托机制：
+    >
+    > Java系统提供三种类加载器：启动类加载器、扩展类加载器、应用程序类加载器，双亲委托机制要求除了顶层启动类加载器外，所有其他类加载器都应该有自己的父类加载器。如果一个类收到类加载的请求，它首先不会自己去尝试加载这个类，而是把这个请求委派给父类加载器去完成，每一个层次的类加载器都是如此，因此所有的类加载请求都应该传到顶层的启动类加载器中，只有当父加载器反馈自己无法完成这个类加载请求时，子加载器才会尝试自己去加载。
 
-    > 绘制流程从ViewRootImpl#scheduleTraversals开始，创建Runnable交给performTraversals方法开始
+13. View的绘制流程
 
 14. EventBus源码
 
@@ -789,6 +905,8 @@
 122. viewpager嵌套滑动冲突怎么解决?
 
 123. svg动画
+
+     > Android 5.0开始引入了VectorDrawable和AnimatedVectorDrawable，以支持svg图片的显示。VectorDrawable定义静态可绘制对象，在xml文件中定义树形层次结构、由path和group组成。AnimatedVectorDrawable会为矢量图形的属性添加动画，可以将添加动画效果之后的矢量图形定义在三个单独的资源文件中。对于Android 5.0以前的版本，提供兼容的类VectorDrawableCompat和AnimatedVectorDrawableCompat。
 
 124. 属性动画画一个抛物线怎么弄?
 
