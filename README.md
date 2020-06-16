@@ -258,6 +258,16 @@
 
 13. View的绘制流程
 
+    > View的绘制流程是从ViewRootImpl#performTraversals()方法开始的，经过measure、layout和draw三个过程，其中measure用来测量View的宽高、layout用来确定View的宽高以及摆放位置、draw用来将View绘制在屏幕上。具体流程是performTraversals方法会依次调用performMeasure、performLayout、performDraw方法，这三个方法分别完成顶级DecorView的测量、摆放、绘画方法。在performMeasure方法中调用View#measure方法，之后又会调用View#onMeasure方法，在onMeasure方法中会调用子View#measure方法，子View又调用onMeasure测试其子View，如此循环就完成了整个视图树的测量过程。performLayout和performDraw的流程也是类似的。
+    >
+    > measure过程：系统会将View的LayoutParams和父容器的MeasureSpec转化为对应的MeasureSpec，再根据这个MeasureSpec来测量View的宽高。MeasureSpec是一个32位的int值，高2位代表SpecMode，后30位代表SpecSize。SpecMode是测量模式，有三种测量模式，分别是EXACTLY、AT_MOST和UNSPECIFIED，EXACTLY代表LayoutParams中指定具体值或者match_parent，AT_MOST则代表wrap_content。SpecSize则是在三种测量模式下的规格大小。在View#onMeasure方法中，会调用setMeasuredDimension方法，我们在自定义View重写onMeasure方法时也同样需要调用setMeasureDimension方法，否则当使用wrap_content时相当使用了match_parent（因为View#onMeasure方法中将AT_MOST、EXACTLY做了同样的处理）。ViewGroup没有定义测量的具体方法，即没有重写View的onMeasure方法，具体测量过程交给了子类重写。
+    >
+    > layout过程：View#layout方法会调用setFrame方法，给View中的mLeft/mTop/mBottom/mRight这四个成员赋值，这四个成员决定了getWidth和getHeight方法的返回值，因此需要到layout这一步getWidth和getHeight才会有值。之后View#onLayout方法会调用，这是一个抽象方法，View和ViewGroup都没有实现onLayout方法，具体的摆放需要子类实现，ViewGroup#onLayout方法需要遍历所有子View调用它们的onLayout方法。
+    >
+    > draw过程：绘制背景、调用onDraw绘制自己、调用dispatchDraw绘制children、绘制装饰（onDrawScrollBars）。如果自定义View不需要重写onDraw方法，那么可以通过setWillNotDraw方法设置一个标志位可以启动一定的优化作用。
+    >
+    > invalidate和requestLayout区别：两者都会触发ViewRootImpl#scheduleTraversals方法，但是invalidate会设置几个tag后跳过measure、layout执行draw，而requestLayout会触发measure、layout、draw全套流程。
+
 14. EventBus源码
 
 15. 内存泄露和内存溢出
@@ -929,8 +939,6 @@
 129. 主线程looper如果没有消息,就会阻塞在那,为什么不会ANR?
 
      > ANR指的是系统无法响应用户触摸事件和绘制操作时抛出的异常。主线程looper虽然阻塞，但并不会影响用户事件的处理，反而正是looper处理了用户的触摸事件。
-
-
 
 ## Java
 1. Java多线程
